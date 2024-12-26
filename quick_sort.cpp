@@ -34,103 +34,10 @@ void quick_sort(int arr[], int low, int high)
     }
 }
 
-// Merge two sorted arrays
-void merge(int *arr, int left, int mid, int right)
+// Print array
+void print_array(const char *message, int arr[], int size)
 {
-    int n1 = mid - left + 1;
-    int n2 = right - mid;
-
-    int *L = (int *)malloc(n1 * sizeof(int));
-    int *R = (int *)malloc(n2 * sizeof(int));
-
-    for (int i = 0; i < n1; i++)
-        L[i] = arr[left + i];
-    for (int i = 0; i < n2; i++)
-        R[i] = arr[mid + 1 + i];
-
-    int i = 0, j = 0, k = left;
-    while (i < n1 && j < n2)
-    {
-        if (L[i] <= R[j])
-            arr[k++] = L[i++];
-        else
-            arr[k++] = R[j++];
-    }
-
-    while (i < n1)
-        arr[k++] = L[i++];
-    while (j < n2)
-        arr[k++] = R[j++];
-
-    free(L);
-    free(R);
-}
-
-// Parallel Quick Sort using MPI
-void parallel_quick_sort(int arr[], int size, int rank, int num_procs)
-{
-    int chunk_size = size / num_procs;
-    int remainder = size % num_procs;
-    int *sub_array;
-    int *full_array = NULL;
-
-    // Adjust for uneven sizes
-    if (rank == 0)
-    {
-        full_array = (int *)malloc((chunk_size + remainder) * sizeof(int));
-        for (int i = 0; i < size; i++)
-            full_array[i] = arr[i];
-    }
-
-    // Allocate memory for sub-array
-    sub_array = (int *)malloc((chunk_size + (rank == 0 ? remainder : 0)) * sizeof(int));
-
-    // Scatter the array with remainder handled by rank 0
-    if (rank == 0)
-    {
-        for (int i = 1; i < num_procs; i++)
-        {
-            MPI_Send(full_array + i * chunk_size + remainder, chunk_size, MPI_INT, i, 0, MPI_COMM_WORLD);
-        }
-        for (int i = 0; i < chunk_size + remainder; i++)
-            sub_array[i] = full_array[i];
-    }
-    else
-    {
-        MPI_Recv(sub_array, chunk_size, MPI_INT, 0, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-    }
-
-    // Sort the sub-array
-    quick_sort(sub_array, 0, rank == 0 ? chunk_size + remainder - 1 : chunk_size - 1);
-
-    // Gather sorted sub-arrays back to rank 0
-    if (rank == 0)
-    {
-        for (int i = 1; i < num_procs; i++)
-        {
-            MPI_Recv(arr + i * chunk_size + remainder, chunk_size, MPI_INT, i, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-        }
-        for (int i = 0; i < chunk_size + remainder; i++)
-            arr[i] = sub_array[i];
-
-        // Merge sorted sub-arrays
-        for (int i = 1; i < num_procs; i++)
-        {
-            merge(arr, 0, i * chunk_size + remainder - 1, (i + 1) * chunk_size + remainder - 1);
-        }
-
-        free(full_array);
-    }
-    else
-    {
-        MPI_Send(sub_array, chunk_size, MPI_INT, 0, 0, MPI_COMM_WORLD);
-    }
-
-    free(sub_array);
-}
-
-void print_array(int arr[], int size)
-{
+    printf("%s: ", message);
     for (int i = 0; i < size; i++)
     {
         printf("%d ", arr[i]);
@@ -141,27 +48,45 @@ void print_array(int arr[], int size)
 int main(int argc, char *argv[])
 {
     int rank, num_procs;
-    int arr[] = {5, 2, 9, 1, 5, 6, 7, 3, 8, 4};
+    int arr[] = {15, 2, 21, 9, 17, 1, 5, 6, 7, 3, 8, 4};
     int size = sizeof(arr) / sizeof(arr[0]);
 
     MPI_Init(&argc, &argv);
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
     MPI_Comm_size(MPI_COMM_WORLD, &num_procs);
 
-    if (rank == 0)
-    {
-        printf("Original Array: ");
-        print_array(arr, size);
-    }
-
-    parallel_quick_sort(arr, size, rank, num_procs);
+    int chunk_size = size / num_procs;
+    int *sub_array = (int *)malloc(chunk_size * sizeof(int));
 
     if (rank == 0)
     {
-        printf("Sorted Array: ");
-        print_array(arr, size);
+        // Print the unsorted array
+        print_array("Unsorted Array", arr, size);
     }
 
+    // Scatter the data among processes
+    MPI_Scatter(arr, chunk_size, MPI_INT, sub_array, chunk_size, MPI_INT, 0, MPI_COMM_WORLD);
+
+    // Sort the local chunk
+    quick_sort(sub_array, 0, chunk_size - 1);
+
+    // Gather the sorted chunks back to the root process
+    int *gathered_array = NULL;
+    if (rank == 0)
+    {
+        gathered_array = (int *)malloc(size * sizeof(int));
+    }
+    MPI_Gather(sub_array, chunk_size, MPI_INT, gathered_array, chunk_size, MPI_INT, 0, MPI_COMM_WORLD);
+
+    // Ensure the global array is sorted
+    if (rank == 0)
+    {
+        quick_sort(gathered_array, 0, size - 1);           // Final sorting to merge sorted chunks
+        print_array("Sorted Array", gathered_array, size); // Print the sorted array
+        free(gathered_array);
+    }
+
+    free(sub_array);
     MPI_Finalize();
     return 0;
 }
