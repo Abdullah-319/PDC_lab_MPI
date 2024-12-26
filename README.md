@@ -39,5 +39,5 @@ The repository also includes examples and explanations of essential MPI commands
 ### **Setup Instructions**
 1. Clone the repository:
    ```bash
-   git clone [https://github.com/Abdullah-319/PDC_lab_MPI.git](https://github.com/Abdullah-319/PDC_lab_MPI.git)
+   git clone https://github.com/Abdullah-319/PDC_lab_MPI.git
    cd PDC_lab_MPI
